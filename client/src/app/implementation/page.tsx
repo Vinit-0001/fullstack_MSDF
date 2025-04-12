@@ -5,7 +5,8 @@ import AnimatedGradientBackground from "@/components/ui/animated-gradient-backgr
 import { GlowingEffect } from "@/components/ui/glowing-effect"
 import { motion } from "framer-motion"
 import { ArrowRight, Code2, Database, GitBranch, LineChart, Settings, Upload, FileType, Image, Database as DatasetIcon, LayoutPanelTop, Boxes, GitMerge } from "lucide-react"
-import { useState } from "react"
+import { useState, useRef } from "react"
+import { toast } from "sonner"
 
 // File State Interface
 interface FileState {
@@ -13,6 +14,19 @@ interface FileState {
   image: File | null;
   calibration: File | null;
   labels: File | null;
+}
+
+interface ProcessingResult {
+  status: string;
+  processed_image: string;
+  fused_objects: {
+    bbox2d: number[];
+    bbox3d: number[];
+    category: string;
+    confidence: number;
+    distance: number;
+    position: number[];
+  }[];
 }
 
 // Main Implementation Page Component
@@ -25,6 +39,12 @@ export default function ImplementationPage() {
     labels: null
   });
 
+  const [processing, setProcessing] = useState(false);
+  const [results, setResults] = useState<ProcessingResult | null>(null);
+  const [processedImage, setProcessedImage] = useState<string | null>(null);
+
+  const processingStatusRef = useRef<HTMLDivElement>(null);
+
   // File Change Handler
   const handleFileChange = (type: 'pcd' | 'image' | 'calibration' | 'labels', e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -32,6 +52,48 @@ export default function ImplementationPage() {
         ...prev,
         [type]: e.target.files![0]
       }));
+    }
+  };
+
+  // Process Files Handler
+  const handleProcessFiles = async () => {
+    if (!files.pcd || !files.image || !files.calibration || !files.labels) {
+      toast.error('Please upload all required files');
+      return;
+    }
+
+    setProcessing(true);
+    
+    // Scroll to processing status
+    if (processingStatusRef.current) {
+      processingStatusRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    const formData = new FormData();
+    formData.append('pcd', files.pcd);
+    formData.append('image', files.image);
+    formData.append('calib', files.calibration);
+    formData.append('label', files.labels);
+
+    try {
+      const response = await fetch('http://localhost:8000/process', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Processing failed');
+      }
+
+      const data: ProcessingResult = await response.json();
+      setResults(data);
+      setProcessedImage(`data:image/png;base64,${data.processed_image}`);
+      toast.success('Processing completed successfully');
+    } catch (error) {
+      console.error('Processing error:', error);
+      toast.error('Processing failed. Please try again.');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -368,9 +430,10 @@ export default function ImplementationPage() {
                 <div className="mt-8 flex justify-center">
                   <button
                     className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!files.pcd || !files.image || !files.calibration || !files.labels}
+                    disabled={!files.pcd || !files.image || !files.calibration || !files.labels || processing}
+                    onClick={handleProcessFiles}
                   >
-                    Process Files
+                    {processing ? 'Processing...' : 'Process Files'}
                   </button>
                 </div>
               </motion.div>
@@ -388,119 +451,112 @@ export default function ImplementationPage() {
                 className="relative bg-neutral-900/40 backdrop-blur-xl rounded-3xl p-4 sm:p-6 md:p-8 border border-white/10"
               >
                 <GlowingEffect spread={40} glow={true} disabled={false} proximity={64} />
-                <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-                  <div className="p-2 sm:p-3 rounded-2xl bg-indigo-500/10">
-                    <LayoutPanelTop className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-400" />
+                
+                {/* Processing Status Card */}
+                <div ref={processingStatusRef} className="relative bg-neutral-800/40 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-white/10 mb-6">
+                  <GlowingEffect spread={40} glow={true} disabled={false} proximity={64} />
+                  <div className="flex flex-col items-center text-center gap-3 sm:gap-4">
+                    <div className="p-3 sm:p-4 rounded-xl bg-blue-500/10">
+                      <Settings className="w-6 h-6 sm:w-8 sm:h-8 text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-semibold text-white mb-1 sm:mb-2">Processing Status</h3>
+                      <p className="text-xs sm:text-sm text-white/60">File Upload & Processing</p>
+                    </div>
+                    <div className="w-full space-y-2">
+                      <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
+                        <span className="text-white">LIDAR Data</span>
+                        <span className={files.pcd ? "text-emerald-400" : "text-rose-400"}>
+                          {files.pcd ? "Uploaded" : "Pending"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
+                        <span className="text-white">Image File</span>
+                        <span className={files.image ? "text-emerald-400" : "text-rose-400"}>
+                          {files.image ? "Uploaded" : "Pending"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
+                        <span className="text-white">Calibration Data</span>
+                        <span className={files.calibration ? "text-emerald-400" : "text-rose-400"}>
+                          {files.calibration ? "Uploaded" : "Pending"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
+                        <span className="text-white">Labels File</span>
+                        <span className={files.labels ? "text-emerald-400" : "text-rose-400"}>
+                          {files.labels ? "Uploaded" : "Pending"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
+                        <span className="text-white">Processing Status</span>
+                        <span className={processing ? "text-amber-400" : results ? "text-emerald-400" : "text-rose-400"}>
+                          {processing ? "Processing..." : results ? "Completed" : "Ready to Process"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <h2 className="text-2xl sm:text-3xl font-bold text-white">Output</h2>
                 </div>
 
-                {/* Output Cards Container */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  {/* Image Comparison Card */}
-                  <div className="relative bg-neutral-800/40 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-white/10">
-                    <GlowingEffect spread={40} glow={true} disabled={false} proximity={64} />
-                    <div className="flex flex-col items-center text-center gap-3 sm:gap-4">
-                      <div className="p-3 sm:p-4 rounded-xl bg-indigo-500/10">
-                        <Image className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-400" />
+                {/* Image Comparison Card */}
+                <div className="relative bg-neutral-800/40 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-white/10 mb-6">
+                  <GlowingEffect spread={40} glow={true} disabled={false} proximity={64} />
+                  <div className="flex flex-col items-center text-center gap-3 sm:gap-4">
+                    <div className="p-3 sm:p-4 rounded-xl bg-indigo-500/10">
+                      <Image className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-semibold text-white mb-1 sm:mb-2">Image Comparison</h3>
+                      <p className="text-xs sm:text-sm text-white/60">Original vs Processed</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 w-full">
+                      <div className="aspect-video bg-neutral-700/30 rounded-lg flex items-center justify-center">
+                        {files.image ? (
+                          <img 
+                            src={URL.createObjectURL(files.image)} 
+                            alt="Original" 
+                            className="w-full h-full object-contain rounded-lg"
+                          />
+                        ) : (
+                          <span className="text-white/40 text-xs sm:text-sm">Original</span>
+                        )}
                       </div>
-                      <div>
-                        <h3 className="text-base sm:text-lg font-semibold text-white mb-1 sm:mb-2">Image Comparison</h3>
-                        <p className="text-xs sm:text-sm text-white/60">Original vs Processed</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full">
-                        <div className="aspect-video bg-neutral-700/30 rounded-lg flex items-center justify-center">
-                          {files.image ? (
-                            <img 
-                              src={URL.createObjectURL(files.image)} 
-                              alt="Original" 
-                              className="w-full h-full object-cover rounded-lg"
-                            />
-                          ) : (
-                            <span className="text-white/40 text-xs sm:text-sm">Original</span>
-                          )}
-                        </div>
-                        <div className="aspect-video bg-neutral-700/30 rounded-lg flex items-center justify-center">
-                          {files.image ? (
-                            <img 
-                              src={URL.createObjectURL(files.image)} 
-                              alt="Processed" 
-                              className="w-full h-full object-cover rounded-lg"
-                            />
-                          ) : (
-                            <span className="text-white/40 text-xs sm:text-sm">Processed</span>
-                          )}
-                        </div>
+                      <div className="aspect-video bg-neutral-700/30 rounded-lg flex items-center justify-center">
+                        {processedImage ? (
+                          <img 
+                            src={processedImage} 
+                            alt="Processed" 
+                            className="w-full h-full object-contain rounded-lg"
+                          />
+                        ) : (
+                          <span className="text-white/40 text-xs sm:text-sm">Processed</span>
+                        )}
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Object Detection Card */}
-                  <div className="relative bg-neutral-800/40 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-white/10">
-                    <GlowingEffect spread={40} glow={true} disabled={false} proximity={64} />
-                    <div className="flex flex-col items-center text-center gap-3 sm:gap-4">
-                      <div className="p-3 sm:p-4 rounded-xl bg-purple-500/10">
-                        <Boxes className="w-6 h-6 sm:w-8 sm:h-8 text-purple-400" />
-                      </div>
-                      <div>
-                        <h3 className="text-base sm:text-lg font-semibold text-white mb-1 sm:mb-2">Object Detection</h3>
-                        <p className="text-xs sm:text-sm text-white/60">Detected Objects</p>
-                      </div>
-                      <div className="w-full space-y-2">
-                        {[
-                          { label: "Car", confidence: 95 },
-                          { label: "Person", confidence: 87 }
-                        ].map((detection, index) => (
-                          <div key={index} className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
-                            <span className="text-white">{detection.label}</span>
-                            <span className="text-emerald-400">{detection.confidence}%</span>
+                {/* Object Detection Card */}
+                <div className="relative bg-neutral-800/40 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-white/10">
+                  <GlowingEffect spread={40} glow={true} disabled={false} proximity={64} />
+                  <div className="flex flex-col items-center text-center gap-3 sm:gap-4">
+                    <div className="p-3 sm:p-4 rounded-xl bg-purple-500/10">
+                      <Boxes className="w-6 h-6 sm:w-8 sm:h-8 text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-semibold text-white mb-1 sm:mb-2">Object Detection</h3>
+                      <p className="text-xs sm:text-sm text-white/60">Detected Objects</p>
+                    </div>
+                    <div className="w-full space-y-2">
+                      {results?.fused_objects.map((obj, index) => (
+                        <div key={index} className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
+                          <span className="text-white">{obj.category}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-400">{(obj.confidence * 100).toFixed(1)}%</span>
+                            <span className="text-blue-400">{obj.distance.toFixed(1)}m</span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Processing Status Card */}
-                  <div className="relative bg-neutral-800/40 backdrop-blur-sm rounded-2xl p-4 sm:p-6 border border-white/10">
-                    <GlowingEffect spread={40} glow={true} disabled={false} proximity={64} />
-                    <div className="flex flex-col items-center text-center gap-3 sm:gap-4">
-                      <div className="p-3 sm:p-4 rounded-xl bg-blue-500/10">
-                        <Settings className="w-6 h-6 sm:w-8 sm:h-8 text-blue-400" />
-                      </div>
-                      <div>
-                        <h3 className="text-base sm:text-lg font-semibold text-white mb-1 sm:mb-2">Processing Status</h3>
-                        <p className="text-xs sm:text-sm text-white/60">File Upload & Processing</p>
-                      </div>
-                      <div className="w-full space-y-2">
-                        <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
-                          <span className="text-white">LIDAR Data</span>
-                          <span className={files.pcd ? "text-emerald-400" : "text-rose-400"}>
-                            {files.pcd ? "Uploaded" : "Pending"}
-                          </span>
                         </div>
-                        <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
-                          <span className="text-white">Image File</span>
-                          <span className={files.image ? "text-emerald-400" : "text-rose-400"}>
-                            {files.image ? "Uploaded" : "Pending"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
-                          <span className="text-white">Calibration Data</span>
-                          <span className={files.calibration ? "text-emerald-400" : "text-rose-400"}>
-                            {files.calibration ? "Uploaded" : "Pending"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
-                          <span className="text-white">Labels File</span>
-                          <span className={files.labels ? "text-emerald-400" : "text-rose-400"}>
-                            {files.labels ? "Uploaded" : "Pending"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between bg-neutral-700/30 rounded-lg p-2 text-xs sm:text-sm">
-                          <span className="text-white">Processing Status</span>
-                          <span className="text-amber-400">Ready to Process</span>
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 </div>
