@@ -1,0 +1,11 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+numpy==2.1.1
+opencv-python==4.11.0.86
+matplotlib==3.10.1
+ultralytics==8.3.105
+scipy==1.15.2
+pandas==2.2.3
+ipython==8.18.1
+open3d==0.17.0
