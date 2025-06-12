@@ -170,4 +170,4 @@ For any queries or support, please contact:
 
 ---
 
-Made by Sanket Sutar 
+Made by Sanket Sutar, Vinit Pitrubhakta
